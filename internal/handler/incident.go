@@ -117,15 +117,16 @@ func (h *Handler) getStats(c *gin.Context) {
 // POST /api/v1/location/check
 func (h *Handler) checkLocation(c *gin.Context) {
 	var input struct {
-		X float64 `json:"x" binding:"required"`
-		Y float64 `json:"y" binding:"required"`
+		UserID int     `json:"user_id" binding:"required"`
+		X      float64 `json:"x" binding:"required"`
+		Y      float64 `json:"y" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	nearby, err := h.services.IncidentService.CheckLocation(c.Request.Context(), input.X, input.Y)
+	nearby, err := h.services.IncidentService.CheckLocation(c.Request.Context(), input.UserID, input.X, input.Y)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

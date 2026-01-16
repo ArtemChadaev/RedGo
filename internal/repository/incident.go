@@ -84,18 +84,6 @@ func (r *incidentRepository) Delete(ctx context.Context, id int) error {
 	return err
 }
 
-func (r *incidentRepository) GetStats(ctx context.Context, windowMinutes int) (int, error) {
-	var count int
-	query := `
-		SELECT COUNT(DISTINCT user_id) 
-		FROM location_checks 
-		WHERE created_at >= NOW() - ($1 || ' minutes')::interval
-	`
-
-	err := r.db.GetContext(ctx, &count, query, windowMinutes)
-	return count, err
-}
-
 func (r *incidentRepository) GetCircle(ctx context.Context, x, y, radius float64) ([]domain.Incident, error) {
 	incidents := []domain.Incident{}
 
@@ -112,4 +100,22 @@ func (r *incidentRepository) GetCircle(ctx context.Context, x, y, radius float64
 	}
 
 	return incidents, nil
+}
+
+func (r *incidentRepository) GetStats(ctx context.Context, windowMinutes int) (int, error) {
+	var count int
+	query := `
+       SELECT COUNT(DISTINCT user_id) 
+       FROM location_checks 
+       WHERE created_at >= NOW() - INTERVAL '1 minute' * $1
+    `
+
+	err := r.db.GetContext(ctx, &count, query, windowMinutes)
+	return count, err
+}
+
+func (r *incidentRepository) SaveCheck(ctx context.Context, userID int, x, y float64) error {
+	query := `INSERT INTO location_checks (user_id, x, y) VALUES ($1, $2, $3)`
+	_, err := r.db.ExecContext(ctx, query, userID, x, y)
+	return err
 }

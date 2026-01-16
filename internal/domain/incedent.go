@@ -24,6 +24,9 @@ type IncidentRepository interface {
 
 	// Получение инцидентов в круге
 	GetCircle(ctx context.Context, x, y, radius float64) ([]Incident, error)
+
+	//Сохранение проверок
+	SaveCheck(ctx context.Context, userID int, x, y float64) error
 }
 
 type IncidentService interface {
@@ -34,7 +37,7 @@ type IncidentService interface {
 	DeleteIncident(ctx context.Context, id int) error
 
 	// Логика проверки координат игрока: попал ли он в радиус опасности
-	CheckLocation(ctx context.Context, playerX, playerY float64) ([]Incident, error)
+	CheckLocation(ctx context.Context, userID int, x, y float64) ([]Incident, error)
 
 	// Получение статистики (уникальные пользователи)
 	GetStats(ctx context.Context) (int, error)

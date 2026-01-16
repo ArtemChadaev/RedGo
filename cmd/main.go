@@ -78,20 +78,22 @@ func main() {
 
 	fmt.Println("Stopping server...")
 
-	// Создаем контекст с таймаутом (например, 5 секунд)
-	// Это время, которое мы даем серверу на "сборы"
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// Вызываем Shutdown у твоей структуры из domain/server.go
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatalf("Server Shutdown Failed:%+v", err)
 	}
 
-	// Здесь также можно закрыть базу и редис
-	// db.Close()
-	// redisClient.Close()
+	// TODO: Сделать хороший выход с бд с сохранением данных
+
+	if err := db.Close(); err != nil {
+		log.Printf("Failed DB: %v", err)
+	}
+
+	if err := redisClient.Close(); err != nil {
+		log.Printf("Failed Redis: %v", err)
+	}
 
 	fmt.Println("Server exited properly")
-	// TODO: srv.Shutdown для плавного выхода
 }

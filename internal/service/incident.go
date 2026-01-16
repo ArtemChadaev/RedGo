@@ -52,8 +52,12 @@ func (s *IncidentService) DeleteIncident(ctx context.Context, id int) error {
 	return s.repo.Delete(ctx, id)
 }
 
-func (s *IncidentService) CheckLocation(ctx context.Context, playerX, playerY float64) ([]domain.Incident, error) {
-	return s.repo.GetCircle(ctx, playerX, playerY, s.cfg.DetectionRadius)
+func (s *IncidentService) CheckLocation(ctx context.Context, userID int, x, y float64) ([]domain.Incident, error) {
+	if err := s.repo.SaveCheck(ctx, userID, x, y); err != nil {
+		return nil, err
+	}
+
+	return s.repo.GetCircle(ctx, x, y, s.cfg.DetectionRadius)
 }
 
 func (s *IncidentService) GetStats(ctx context.Context) (int, error) {

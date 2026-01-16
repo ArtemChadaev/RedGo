@@ -32,7 +32,7 @@ func (h *Handler) Routes(apiKey string) *gin.Engine {
 			incident.GET("/:id", h.getIncidentByID)
 			incident.PUT("/:id", h.updateIncident)
 			incident.DELETE("/:id", h.deleteIncident)
-			incident.GET("/stats", h.getStats) // Статистика тоже под ключом
+			incident.GET("/stats", h.getStats)
 		}
 
 		api.POST("/location/check", h.checkLocation)
