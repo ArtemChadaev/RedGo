@@ -10,7 +10,7 @@ type Service struct {
 	domain.IncidentService
 }
 
-func NewService(repos *repository.Repository, redis *redis.Client) *Service {
+func NewService(repos *repository.Repository, redis *redis.Client, cfg IncidentConfig) *Service {
 	incidentService := NewIncidentService(repos.Incidents)
 	return &Service{
 		IncidentService: incidentService,

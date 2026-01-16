@@ -37,26 +37,79 @@ func (r *incidentRepository) Create(ctx context.Context, inc *domain.Incident) e
 }
 
 func (r *incidentRepository) GetAll(ctx context.Context, limit, offset int) ([]domain.Incident, error) {
-	//TODO implement me
-	panic("implement me")
+	incidents := make([]domain.Incident, 0, limit)
+
+	query := `
+		SELECT id, description, x, y, status 
+		FROM incidents 
+		ORDER BY id DESC 
+		LIMIT $1 OFFSET $2
+	`
+
+	err := r.db.SelectContext(ctx, &incidents, query, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+
+	return incidents, nil
 }
 
-func (r *incidentRepository) GetByID(ctx context.Context, id int64) (*domain.Incident, error) {
-	//TODO implement me
-	panic("implement me")
+func (r *incidentRepository) GetByID(ctx context.Context, id int) (*domain.Incident, error) {
+	var incident domain.Incident
+	query := `SELECT id, description, x, y, status FROM incidents WHERE id = $1`
+
+	err := r.db.GetContext(ctx, &incident, query, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return &incident, nil
 }
 
 func (r *incidentRepository) Update(ctx context.Context, inc *domain.Incident) error {
-	//TODO implement me
-	panic("implement me")
+	query := `
+		UPDATE incidents 
+		SET description = :description, x = :x, y = :y, status = :status 
+		WHERE id = :id
+	`
+
+	_, err := r.db.NamedExecContext(ctx, query, inc)
+	return err
 }
 
-func (r *incidentRepository) Delete(ctx context.Context, id int64) error {
-	//TODO implement me
-	panic("implement me")
+func (r *incidentRepository) Delete(ctx context.Context, id int) error {
+	query := `UPDATE incidents SET status = 'inactive' WHERE id = $1`
+
+	_, err := r.db.ExecContext(ctx, query, id)
+	return err
 }
 
 func (r *incidentRepository) GetStats(ctx context.Context, windowMinutes int) (int, error) {
-	//TODO implement me
-	panic("implement me")
+	var count int
+	query := `
+		SELECT COUNT(DISTINCT user_id) 
+		FROM location_checks 
+		WHERE created_at >= NOW() - ($1 || ' minutes')::interval
+	`
+
+	err := r.db.GetContext(ctx, &count, query, windowMinutes)
+	return count, err
+}
+
+func (r *incidentRepository) GetCircle(ctx context.Context, x, y, radius float64) ([]domain.Incident, error) {
+	incidents := []domain.Incident{}
+
+	query := `
+		SELECT id, description, x, y, status 
+		FROM incidents 
+		WHERE status = 'active' 
+		  AND ( (x - $1)^2 + (y - $2)^2 <= $3 )
+	`
+
+	err := r.db.SelectContext(ctx, &incidents, query, x, y, radius*radius)
+	if err != nil {
+		return nil, err
+	}
+
+	return incidents, nil
 }

@@ -19,26 +19,25 @@ func NewHandler(services *service.Service, redis *redis.Client) *Handler {
 	}
 }
 
-func (h *Handler) Routes() *gin.Engine {
+func (h *Handler) Routes(apiKey string) *gin.Engine {
 	router := gin.New()
 
-	//api := router.Group("/api/v1")
-	//{
-	//	incident := router.Group("/incidents")
-	//	{
-	//		incident.POST("/")
-	//		incident.GET("/")
-	//		incident.GET("/:id")
-	//		incident.PUT("/:id")
-	//		incident.DELETE("/:id")
-	//
-	//		incident.GET("/stats")
-	//	}
-	//
-	//	api.POST("/location/check")
-	//
-	//	api.GET("/system/health")
-	//}
+	api := router.Group("/api/v1")
+	{
+		// Группа с защитой API-ключом
+		incident := api.Group("/incidents", h.apiKeyMiddleware(apiKey))
+		{
+			incident.POST("/", h.createIncident)
+			incident.GET("/", h.getIncidents)
+			incident.GET("/:id", h.getIncidentByID)
+			incident.PUT("/:id", h.updateIncident)
+			incident.DELETE("/:id", h.deleteIncident)
+			incident.GET("/stats", h.getStats) // Статистика тоже под ключом
+		}
+
+		api.POST("/location/check", h.checkLocation)
+		api.GET("/system/health", h.healthCheck)
+	}
 
 	return router
 }
