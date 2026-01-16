@@ -1,0 +1,7 @@
+CREATE TABLE incidents (
+   id SERIAL PRIMARY KEY,
+   description TEXT NOT NULL,
+   x DOUBLE PRECISION NOT NULL,
+   y DOUBLE PRECISION NOT NULL,
+   status VARCHAR(20) NOT NULL DEFAULT 'active'
+);
