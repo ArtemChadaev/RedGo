@@ -1,12 +1,9 @@
 package main
 
 import (
-	"fmt"
-	"io"
 	"log"
 	"math/rand"
 	"net/http"
-	"time"
 )
 
 func main() {
@@ -18,24 +15,19 @@ func main() {
 			return
 		}
 
-		body, _ := io.ReadAll(r.Body)
 		defer r.Body.Close()
 
 		chance := rand.Intn(100)
 
 		switch {
-		case chance < 10: // 10% шанс на долгий ответ
-			fmt.Println("Timeout")
-			time.Sleep(15 * time.Second)
-			w.WriteHeader(http.StatusOK)
+		case chance < 10: // 10% шанс "зависнуть" без ответа
+			<-make(chan struct{})
 
 		case chance < 20: // 10% шанс на внутреннюю ошибку сервера
-			fmt.Println("500 Internal Server Error")
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(`{"error": "portal_crashed"}`))
 
 		default:
-			fmt.Printf("✅ Успешно получено: %s\n", string(body))
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{"status": "ok"}`))
 		}

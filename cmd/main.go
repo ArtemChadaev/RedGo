@@ -58,7 +58,7 @@ func main() {
 
 	// Запускаем фоновые процессы воркера
 	go webhookWorker.RunScheduler(ctx)
-	go webhookWorker.StartAutoscaler(ctx, 2, 100)
+	go webhookWorker.StartAutoscaler(ctx, 2, 200)
 
 	// 3. Инициализация слоев (Repository -> Service -> Handler)
 	repos := repository.NewRepository(db, redisClient)

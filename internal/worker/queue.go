@@ -47,11 +47,11 @@ func NewWebhookWorker(redis *redis.Client, url string) *WebhookWorker {
 		redis:      redis,
 		webhookURL: url,
 		client: &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout: 5 * time.Second,
 			Transport: &http.Transport{
-				MaxIdleConns:        100,
+				MaxIdleConns:        500,
 				IdleConnTimeout:     90 * time.Second,
-				MaxIdleConnsPerHost: 20,
+				MaxIdleConnsPerHost: 500,
 			},
 		},
 	}
