@@ -1,0 +1,294 @@
+{
+  "info": {
+    "_postman_id": "f87f37ec-5b12-4002-a420-d51f5a346ffc",
+    "name": "Нагрузка",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "44653301",
+    "_collection_link": "https://chadaev-971859.postman.co/workspace/Chadaev's-Workspace~fcb3fb95-8dcc-48cb-8d10-854f375596ee/collection/44653301-f87f37ec-5b12-4002-a420-d51f5a346ffc?action=share&source=collection_link&creator=44653301"
+  },
+  "item": [
+    {
+      "name": "checkLocation Copy",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "// Функция для рандома в диапазоне [min, max]",
+              "function getRandomFloat(min, max) {",
+              "    return Math.random() * (max - min) + min;",
+              "}",
+              "",
+              "function getRandomInt(min, max) {",
+              "    return Math.floor(Math.random() * (max - min + 1)) + min;",
+              "}",
+              "",
+              "// 1. Координаты (например, в диапазоне от -90 до 90)",
+              "pm.variables.set(\"random_x\", getRandomFloat(-90, 90).toFixed(6));",
+              "pm.variables.set(\"random_y\", getRandomFloat(-180, 180).toFixed(6));",
+              "",
+              "// 2. ID пользователя (например, от 1 до 500)",
+              "pm.variables.set(\"random_user_id\", getRandomInt(1, 500));",
+              "",
+              "// 3. Рандомный статус",
+              "const statuses = [\"active\", \"inactive\"];",
+              "const status = statuses[Math.floor(Math.random() * statuses.length)];",
+              "pm.variables.set(\"random_status\", status);",
+              "",
+              "// 4. Описание с номером итерации",
+              "pm.variables.set(\"random_desc\", \"Test incident generated at \" + new Date().toISOString());"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"x\": {{random_x}},\n    \"y\": {{random_y}},\n    \"user_id\": {{random_user_id}}\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/location/check",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "location",
+            "check"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "createIncident Copy",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "// Функция для рандома в диапазоне [min, max]",
+              "function getRandomFloat(min, max) {",
+              "    return Math.random() * (max - min) + min;",
+              "}",
+              "",
+              "function getRandomInt(min, max) {",
+              "    return Math.floor(Math.random() * (max - min + 1)) + min;",
+              "}",
+              "",
+              "// 1. Координаты (например, в диапазоне от -90 до 90)",
+              "pm.variables.set(\"random_x\", getRandomFloat(-90, 90).toFixed(6));",
+              "pm.variables.set(\"random_y\", getRandomFloat(-180, 180).toFixed(6));",
+              "",
+              "// 2. ID пользователя (например, от 1 до 500)",
+              "pm.variables.set(\"random_user_id\", getRandomInt(1, 500));",
+              "",
+              "// 3. Рандомный статус",
+              "const statuses = [\"active\", \"inactive\"];",
+              "const status = statuses[Math.floor(Math.random() * statuses.length)];",
+              "pm.variables.set(\"random_status\", status);",
+              "",
+              "// 4. Описание с номером итерации",
+              "pm.variables.set(\"random_desc\", \"Test incident generated at \" + new Date().toISOString());"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "apikey",
+          "apikey": [
+            {
+              "key": "key",
+              "value": "X-API-Key",
+              "type": "string"
+            },
+            {
+              "key": "in",
+              "value": "header",
+              "type": "string"
+            },
+            {
+              "key": "value",
+              "value": "red-secret",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"x\": {{random_x}},\n    \"y\": {{random_y}},\n    \"description\": \"{{random_desc}}\",\n    \"status\": \"{{random_status}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/incidents",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "incidents"
+          ]
+        },
+        "description": "This is a POST request, submitting data to an API via the request body. This request submits JSON data, and the data is reflected in the response.\n\nA successful POST request typically returns a `200 OK` or `201 Created` response code."
+      },
+      "response": []
+    },
+    {
+      "name": "Проверка работы адреса",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "https://consuelo-extralegal-ray.ngrok-free.dev",
+          "protocol": "https",
+          "host": [
+            "consuelo-extralegal-ray",
+            "ngrok-free",
+            "dev"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Проверка работы локального адреса",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjYzMjAzMjUsImlhdCI6MTc2NjMxOTQyNSwidXNlcl9pZCI6MywiZ2FtZV91c2VyX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAwIn0.8GJl57BEwTRf8-PyzZXkFJ6ZMb93RiGkRSewOE3UA54",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"nickname\": \"Artem\"\n}"
+        },
+        "url": {
+          "raw": "localhost:9090",
+          "host": [
+            "localhost"
+          ],
+          "port": "9090"
+        }
+      },
+      "response": []
+    }
+  ],
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-KEY",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "red-secret",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          "// Функция для рандома в диапазоне [min, max]",
+          "function getRandomFloat(min, max) {",
+          "    return Math.random() * (max - min) + min;",
+          "}",
+          "",
+          "function getRandomInt(min, max) {",
+          "    return Math.floor(Math.random() * (max - min + 1)) + min;",
+          "}",
+          "",
+          "// 1. Координаты (например, в диапазоне от -90 до 90)",
+          "pm.variables.set(\"random_x\", getRandomFloat(-90, 90).toFixed(6));",
+          "pm.variables.set(\"random_y\", getRandomFloat(-180, 180).toFixed(6));",
+          "",
+          "// 2. ID пользователя (например, от 1 до 500)",
+          "pm.variables.set(\"random_user_id\", getRandomInt(1, 500));",
+          "",
+          "// 3. Рандомный статус",
+          "const statuses = [\"active\", \"inactive\"];",
+          "const status = statuses[Math.floor(Math.random() * statuses.length)];",
+          "pm.variables.set(\"random_status\", status);",
+          "",
+          "// 4. Описание с номером итерации",
+          "pm.variables.set(\"random_desc\", \"Test incident generated at \" + new Date().toISOString());"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": ""
+    }
+  ]
+}

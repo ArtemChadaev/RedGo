@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	// Загружаем переменные из .env (NGROK_AUTHTOKEN и NGROK_DOMAIN)
+	// Загружаем переменные из .env
 	if err := godotenv.Load(); err != nil {
 		log.Println("Предупреждение: .env файл не найден")
 	}
@@ -27,34 +27,10 @@ func run(ctx context.Context) error {
 	token := os.Getenv("NGROK_AUTHTOKEN")
 	domain := os.Getenv("NGROK_DOMAIN")
 
-	// Проверяем, что переменные вообще дошли до программы
-	fmt.Printf("DEBUG: Token length: %d\n", len(token))
-	fmt.Printf("DEBUG: Domain: %s\n", domain)
-
 	if token == "" || domain == "" {
 		return fmt.Errorf("критическая ошибка: NGROK_AUTHTOKEN или NGROK_DOMAIN не заданы в .env")
 	}
 
-	fmt.Println("⏳ Подключаемся к ngrok... (это может занять до 10 секунд)")
-
-	agent, err := ngrok.NewAgent(
-		ngrok.WithAuthtoken(token),
-	)
-	if err != nil {
-		return fmt.Errorf("ошибка создания агента: %w", err)
-	}
-
-	// Здесь программа может висеть, если домен занят или сеть тупит
-	ln, err := agent.Listen(ctx,
-		ngrok.WithURL(domain),
-	)
-	if err != nil {
-		return fmt.Errorf("ошибка Listen: %w", err)
-	}
-
-	fmt.Println("🚀 Малыш-приемник запущен на постоянном адресе:", ln.URL())
-
-	// 3. Наш обработчик с твоей логикой
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -64,19 +40,40 @@ func run(ctx context.Context) error {
 		chance := rand.Intn(100)
 		switch {
 		case chance < 10:
-			fmt.Println("⚠️ Имитация зависания (Hanging...)")
+			fmt.Println("Имитация зависания")
 			<-make(chan struct{})
 
 		case chance < 20:
-			fmt.Println("❌ Ответ: 500 Internal Server Error")
+			fmt.Println("Ответ: 500")
 			w.WriteHeader(http.StatusInternalServerError)
 
 		default:
-			fmt.Println("✅ Ответ: 200 OK")
+			fmt.Println("Ответ: 200")
 			w.WriteHeader(http.StatusOK)
 		}
 	})
 
-	// Запускаем сервер прямо на туннеле ngrok
+	// Фоновое прослушивание 9090
+	go func() {
+		localAddr := ":9090"
+		fmt.Println("localhost" + localAddr)
+		if err := http.ListenAndServe(localAddr, handler); err != nil {
+			log.Printf("Ошибка локального сервера: %v", err)
+		}
+	}()
+
+	fmt.Println("Подключаемся к ngrok")
+	agent, err := ngrok.NewAgent(ngrok.WithAuthtoken(token))
+	if err != nil {
+		return fmt.Errorf("Ошибка создания агента: %w", err)
+	}
+
+	ln, err := agent.Listen(ctx, ngrok.WithURL(domain))
+	if err != nil {
+		return fmt.Errorf("Ошибка Listen: %w", err)
+	}
+
+	fmt.Println("URL:", ln.URL())
+
 	return http.Serve(ln, handler)
 }
