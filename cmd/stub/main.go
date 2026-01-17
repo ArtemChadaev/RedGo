@@ -20,16 +20,14 @@ func main() {
 		chance := rand.Intn(100)
 
 		switch {
-		case chance < 10: // 10% шанс "зависнуть" без ответа
+		case chance < 10:
 			<-make(chan struct{})
 
-		case chance < 20: // 10% шанс на внутреннюю ошибку сервера
+		case chance < 20:
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"error": "portal_crashed"}`))
 
 		default:
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"status": "ok"}`))
 		}
 	})
 
