@@ -8,18 +8,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Middleware для проверки API-ключа
-func (h *Handler) apiKeyMiddleware(apiKey string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		headerKey := c.GetHeader("X-API-KEY")
-		if headerKey != apiKey {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid api key"})
-			return
-		}
-		c.Next()
-	}
-}
-
 // POST /api/v1/incidents/
 func (h *Handler) createIncident(c *gin.Context) {
 	var input domain.Incident
@@ -39,7 +27,7 @@ func (h *Handler) createIncident(c *gin.Context) {
 // GET /api/v1/incidents/
 func (h *Handler) getIncidents(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "0")) // 0 = выдать "много" по твоей просьбе
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "0"))
 
 	incidents, err := h.services.IncidentService.GetIncidents(c.Request.Context(), page, pageSize)
 	if err != nil {
@@ -52,7 +40,7 @@ func (h *Handler) getIncidents(c *gin.Context) {
 
 // GET /api/v1/incidents/:id
 func (h *Handler) getIncidentByID(c *gin.Context) {
-	id, err := strconv.Atoi("id")
+	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
