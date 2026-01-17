@@ -9,7 +9,8 @@ type Incident struct {
 	Description string  `json:"description" db:"description"`
 	X           float64 `json:"x" db:"x"`
 	Y           float64 `json:"y" db:"y"`
-	Status      string  `json:"status" db:"status"` // active or inactive
+	// TODO: Сделать защиту чтобы было 2 статуса только везде
+	Status string `json:"status" db:"status"` // active or inactive
 }
 
 type IncidentRepository interface {

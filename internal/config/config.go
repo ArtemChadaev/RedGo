@@ -10,6 +10,7 @@ type Config struct {
 	ApiKey          string  `mapstructure:"API_KEY"`
 	StatsWindow     int     `mapstructure:"STATS_TIME_WINDOW_MINUTES"`
 	DetectionRadius float64 `mapstructure:"DETECTION_RADIUS"`
+	WebhookURL      string  `mapstructure:"WEBHOOK_URL"`
 
 	// Настройки Postgres
 	DBHost     string `mapstructure:"DB_HOST"`

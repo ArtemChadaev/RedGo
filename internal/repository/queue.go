@@ -8,8 +8,6 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const webhookQueueKey = "webhooks:queue"
-
 type incidentQueueRepository struct {
 	redis *redis.Client
 }
@@ -24,5 +22,5 @@ func (r *incidentQueueRepository) PushWebhookTask(ctx context.Context, task doma
 		return err
 	}
 
-	return r.redis.RPush(ctx, webhookQueueKey, data).Err()
+	return r.redis.RPush(ctx, domain.WebhookQueueKey, data).Err()
 }

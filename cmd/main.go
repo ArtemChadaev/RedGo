@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -14,16 +16,20 @@ import (
 	"github.com/ArtemChadaev/RedGo/internal/handler"
 	"github.com/ArtemChadaev/RedGo/internal/repository"
 	"github.com/ArtemChadaev/RedGo/internal/service"
+	"github.com/ArtemChadaev/RedGo/internal/worker"
 )
 
 func main() {
-	// 0. Загрузка конфигурации один раз при старте
+	// 0. Конфиг и базовый контекст
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Ошибка загрузки конфига: %s", err)
 	}
 
-	// 1. Подключение к БД, используя данные из конфига
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// 1. Инициализация ресурсов
 	db, err := repository.NewPostgresDB(repository.PostgresConfig{
 		Host:     cfg.DBHost,
 		Port:     cfg.DBPort,
@@ -36,7 +42,6 @@ func main() {
 		log.Fatalf("failed to initialize db: %s", err.Error())
 	}
 
-	// 2. Подключение к Redis, используя данные из конфига
 	redisClient, err := repository.NewRedisClient(repository.RedisConfig{
 		Addr:     cfg.RedisHost + ":" + cfg.RedisPort,
 		Password: cfg.RedisPassword,
@@ -46,53 +51,76 @@ func main() {
 		log.Fatalf("failed to initialize redis: %s", err.Error())
 	}
 
-	// 3. Инициализация слоев (Dependency Injection)
+	// 2.
 	repos := repository.NewRepository(db, redisClient)
-
-	// Настройки для бизнес-логики сервиса инцидентов
 	incCfg := service.IncidentConfig{
 		StatsWindow:     cfg.StatsWindow,
 		DetectionRadius: cfg.DetectionRadius,
 	}
-
 	services := service.NewService(repos, incCfg)
-
-	// Инициализируем роуты, передавая API-ключ для Middleware
 	handlers := handler.NewHandler(services)
 
-	srv := new(domain.Server)
+	// 3. Инициализация Воркеров и WaitGroup
+	var wg sync.WaitGroup // Счетчик для ожидания горутин
+	w := worker.NewWebhookWorker(redisClient, cfg.WebhookURL)
 
-	// Запуск сервера на порту из конфига
+	// Запускаем планировщик
+	wg.Add(1)
 	go func() {
-		if err := srv.Run(cfg.Port, handlers.Routes(cfg.ApiKey)); err != nil {
-			log.Fatalf("error occurred while running http server: %s", err.Error())
+		defer wg.Done()
+		w.RunScheduler(ctx)
+	}()
+
+	// Запускаем автоскейлер
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		w.StartAutoscaler(ctx, 2, 20)
+	}()
+
+	// 4. Запуск HTTP сервера
+	srv := new(domain.Server)
+	go func() {
+		if err := srv.Run(cfg.Port, handlers.Routes(cfg.ApiKey)); err != nil && err != http.ErrServerClosed {
+			log.Printf("HTTP server error: %s", err.Error())
 		}
 	}()
 
 	log.Printf("Server started on port %s", cfg.Port)
 
-	// Ожидание сигнала завершения
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
-	<-ch
+	// --- ОЖИДАНИЕ ЗАВЕРШЕНИЯ ---
+	<-ctx.Done()
+	log.Println("Shutting down gracefully...")
 
-	fmt.Println("Stopping server...")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	// 1. Сначала закрываем HTTP-сервер (чтобы не принимал новые запросы)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("Server Shutdown Failed:%+v", err)
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Server Shutdown Failed: %+v", err)
 	}
 
-	// TODO: Сделать хороший выход с бд с сохранением данных
+	// 2. Ждем, пока воркеры доделают свои задачи и выйдут из циклов
+	waitCh := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(waitCh)
+	}()
 
+	// Либо ждем воркеров, либо убиваем по таймауту
+	select {
+	case <-waitCh:
+		log.Println("Workers finished successfully")
+	case <-time.After(10 * time.Second):
+		log.Println("Workers shutdown timed out, force closing...")
+	}
+
+	// 3. И только в самом конце закрываем БД и Redis
 	if err := db.Close(); err != nil {
-		log.Printf("Failed DB: %v", err)
+		log.Printf("Failed to close DB: %v", err)
 	}
-
 	if err := redisClient.Close(); err != nil {
-		log.Printf("Failed Redis: %v", err)
+		log.Printf("Failed to close Redis: %v", err)
 	}
 
 	fmt.Println("Server exited properly")
