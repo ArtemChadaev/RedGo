@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -36,6 +37,8 @@ type WebhookWorker struct {
 	activeWorkers int32                // Атомарный счетчик живых воркеров
 	workerCancel  []context.CancelFunc // Функции для остановки лишних воркеров
 	mu            sync.Mutex
+
+	wg sync.WaitGroup
 }
 
 func NewWebhookWorker(redis *redis.Client, url string) *WebhookWorker {
@@ -55,6 +58,9 @@ func NewWebhookWorker(redis *redis.Client, url string) *WebhookWorker {
 
 // StartAutoscaler — ЕДИНСТВЕННАЯ точка входа. Сама управляет мощностью.
 func (w *WebhookWorker) StartAutoscaler(ctx context.Context, min, max int) {
+	w.wg.Add(1)
+	defer w.wg.Done() // Уменьшаем счетчик только при полном выходе из менеджера
+
 	log.Printf("Autoscaler started. Min: %d, Max: %d", min, max)
 
 	// Запускаем минимальное кол-во воркеров сразу
@@ -98,12 +104,17 @@ func (w *WebhookWorker) addWorker(ctx context.Context) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	// Создаем отдельный контекст для воркера, чтобы его можно было убить отдельно
 	workerCtx, cancel := context.WithCancel(ctx)
 	w.workerCancel = append(w.workerCancel, cancel)
 
 	atomic.AddInt32(&w.activeWorkers, 1)
-	go w.runWorkerLoop(workerCtx)
+
+	// Регистрируем новый воркер
+	w.wg.Add(1)
+	go func() {
+		defer w.wg.Done()
+		w.runWorkerLoop(workerCtx)
+	}()
 }
 
 func (w *WebhookWorker) removeWorker() {
@@ -141,7 +152,7 @@ func (w *WebhookWorker) runWorkerLoop(ctx context.Context) {
 			}
 
 			if err := w.processTask(ctx, task); err != nil {
-				w.handleFailure(ctx, task, err)
+				w.handleFailure(task)
 			}
 		}
 	}
@@ -171,31 +182,31 @@ func (w *WebhookWorker) processTask(ctx context.Context, task domain.WebhookTask
 	return nil
 }
 
-// handleFailure обрабатывает ошибки: планирует переповтор (ZSet) или отправляет в DLQ
-func (w *WebhookWorker) handleFailure(ctx context.Context, task domain.WebhookTask, taskErr error) {
+// handleFailure обрабатывает ошибки: планирует пере повтор (ZSet) или отправляет в DLQ
+func (w *WebhookWorker) handleFailure(task domain.WebhookTask) {
 	task.Retries++
 
-	// Если попытки исчерпаны — в очередь "мертвых" сообщений
-	if task.Retries >= domain.MaxRetries {
-		log.Printf("Task %d FAILED after %d attempts. Moving to DLQ. Last error: %v",
-			task.IncidentID, domain.MaxRetries, taskErr)
+	// ВАЖНО: Создаем новый контекст на 2 секунды для финальной записи в Redis.
+	// Мы НЕ используем входящий ctx, так как он может быть уже отменен (canceled).
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 
+	if task.Retries >= domain.MaxRetries {
+		log.Printf("Task %d FAILED after %d attempts. Moving to DLQ.", task.IncidentID, domain.MaxRetries)
 		data, _ := json.Marshal(task)
-		if err := w.redis.RPush(ctx, domain.WebhookDLQKey, data).Err(); err != nil {
+		// Используем cleanupCtx вместо ctx
+		if err := w.redis.RPush(cleanupCtx, domain.WebhookDLQKey, data).Err(); err != nil {
 			log.Printf("Critical: failed to push to DLQ: %v", err)
 		}
 		return
 	}
 
-	// Рассчитываем время следующей попытки (Exponential Backoff: 2, 4, 8, 16... секунд)
 	delay := time.Duration(math.Pow(2, float64(task.Retries))) * time.Second
 	executeAt := time.Now().Add(delay).Unix()
-
 	data, _ := json.Marshal(task)
 
-	// Сохраняем в ZSet (отложенная очередь)
-	// Score — это время в формате Unix, когда задача должна "проснуться"
-	err := w.redis.ZAdd(ctx, "webhooks:delayed", redis.Z{
+	// Используем cleanupCtx вместо ctx
+	err := w.redis.ZAdd(cleanupCtx, "webhooks:delayed", redis.Z{
 		Score:  float64(executeAt),
 		Member: data,
 	}).Err()
@@ -209,6 +220,9 @@ func (w *WebhookWorker) handleFailure(ctx context.Context, task domain.WebhookTa
 
 // RunScheduler мониторит ZSet и атомарно переносит готовые задачи в основную очередь
 func (w *WebhookWorker) RunScheduler(ctx context.Context) {
+	w.wg.Add(1)
+	defer w.wg.Done()
+
 	log.Println("Scheduler started (ZSet -> Queue)")
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -219,7 +233,7 @@ func (w *WebhookWorker) RunScheduler(ctx context.Context) {
 			log.Println("Stopping scheduler...")
 			return
 		case <-ticker.C:
-			// Запускаем Lua-скрипт
+			// Запускаем Lua-скрипт.
 			// Переносим все задачи, чей Score (время) <= текущему времени
 			now := time.Now().Unix()
 
@@ -229,11 +243,43 @@ func (w *WebhookWorker) RunScheduler(ctx context.Context) {
 				now,
 			).Int()
 
-			if err != nil && err != redis.Nil {
+			if err != nil && !errors.Is(err, redis.Nil) {
 				log.Printf("Scheduler Lua error: %v", err)
 			} else if count > 0 {
 				log.Printf("Scheduler: moved %d tasks to main queue", count)
 			}
 		}
 	}
+}
+
+func (w *WebhookWorker) Wait() {
+	w.wg.Wait()
+}
+
+// Stats содержит информацию о текущей нагрузке
+type Stats struct {
+	PendingTasks  int64 `json:"pending_tasks"`  // В основной очереди
+	DelayedTasks  int64 `json:"delayed_tasks"`  // На повторе (ZSet)
+	ActiveWorkers int32 `json:"active_workers"` // Живые горутины
+}
+
+func (w *WebhookWorker) GetStats(ctx context.Context) (Stats, error) {
+	// 1. Сколько задач ждут прямо сейчас
+	qLen, err := w.redis.LLen(ctx, domain.WebhookQueueKey).Result()
+	if err != nil {
+		return Stats{}, fmt.Errorf("failed to get queue len: %w", err)
+	}
+
+	// 2. Сколько задач "спят" и ждут времени переповтора.
+	// Используем константу или строку "webhooks:delayed"
+	dLen, err := w.redis.ZCard(ctx, "webhooks:delayed").Result()
+	if err != nil {
+		return Stats{}, fmt.Errorf("failed to get delayed len: %w", err)
+	}
+
+	return Stats{
+		PendingTasks:  qLen,
+		DelayedTasks:  dLen,
+		ActiveWorkers: atomic.LoadInt32(&w.activeWorkers),
+	}, nil
 }

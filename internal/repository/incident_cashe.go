@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/ArtemChadaev/RedGo/internal/domain"
@@ -22,7 +23,7 @@ const activeIncidentsKey = "incidents:active"
 func (r *incidentCasheRepository) GetActive(ctx context.Context) ([]domain.Incident, error) {
 	val, err := r.redis.Get(ctx, activeIncidentsKey).Result()
 
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return nil, nil
 	}
 	if err != nil {
@@ -48,4 +49,9 @@ func (r *incidentCasheRepository) SetActive(ctx context.Context, incidents []dom
 
 func (r *incidentCasheRepository) DeleteActive(ctx context.Context) error {
 	return r.redis.Del(ctx, activeIncidentsKey).Err()
+}
+
+func (r *incidentCasheRepository) PingRedis(ctx context.Context) error {
+	// Для Redis отправляется команда PING, ответом на которую должно быть PONG
+	return r.redis.Ping(ctx).Err()
 }

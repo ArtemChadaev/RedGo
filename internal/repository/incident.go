@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 
 	"github.com/ArtemChadaev/RedGo/internal/domain"
 	"github.com/jmoiron/sqlx"
@@ -66,21 +67,38 @@ func (r *incidentRepository) GetByID(ctx context.Context, id int) (*domain.Incid
 	return &incident, nil
 }
 
-func (r *incidentRepository) Update(ctx context.Context, inc *domain.Incident) error {
+func (r *incidentRepository) Update(ctx context.Context, id int, input domain.UpdateIncidentInput) error {
+	// В PostgreSQL COALESCE идеально подходит для Partial Update
 	query := `
-		UPDATE incidents 
-		SET description = :description, x = :x, y = :y, status = :status 
-		WHERE id = :id
-	`
+        UPDATE incidents 
+        SET 
+            x = COALESCE($1, x), 
+            y = COALESCE($2, y), 
+            description = COALESCE($3, description),
+            status = COALESCE($4, status)
+        WHERE id = $5
+    `
 
-	_, err := r.db.NamedExecContext(ctx, query, inc)
-	return err
+	// Передаем указатели напрямую.
+	// Если в структуре поле nil, драйвер sql/pq отправит в базу NULL.
+	result, err := r.db.ExecContext(ctx, query, input.X, input.Y, input.Description, input.Status, id)
+	if err != nil {
+		return err
+	}
+
+	// Проверяем, была ли обновлена хотя бы одна строка
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return errors.New("incident not found")
+	}
+
+	return nil
 }
 
 func (r *incidentRepository) Delete(ctx context.Context, id int) error {
-	query := `UPDATE incidents SET status = 'inactive' WHERE id = $1`
+	query := `UPDATE incidents SET status = $1 WHERE id = $2`
 
-	_, err := r.db.ExecContext(ctx, query, id)
+	_, err := r.db.ExecContext(ctx, query, domain.StatusInactive, id)
 	return err
 }
 
@@ -103,14 +121,13 @@ func (r *incidentRepository) SaveCheck(ctx context.Context, userID int, x, y flo
 }
 
 func (r *incidentRepository) GetAllActive(ctx context.Context) ([]domain.Incident, error) {
-	// Пишем запрос, который выбирает только активные записи
 	query := `
         SELECT id, x, y, status 
         FROM incidents 
-        WHERE status = 'active'
-        `
+        WHERE status = $1
+    `
 
-	rows, err := r.db.QueryContext(ctx, query)
+	rows, err := r.db.QueryContext(ctx, query, domain.StatusActive)
 	if err != nil {
 		return nil, err
 	}
@@ -130,4 +147,9 @@ func (r *incidentRepository) GetAllActive(ctx context.Context) ([]domain.Inciden
 	}
 
 	return incidents, nil
+}
+
+func (r *incidentRepository) PingDB(ctx context.Context) error {
+	// PingContext проверяет, что соединение с базой данных всё еще активно
+	return r.db.PingContext(ctx)
 }

@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -20,16 +20,17 @@ import (
 )
 
 func main() {
-	// 0. Конфиг и базовый контекст
+	// 0. Конфиг и базовый контекст для сигналов ОС
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Ошибка загрузки конфига: %s", err)
+		log.Fatalf("failed to config: %s", err)
 	}
 
+	// Создаем контекст, который отменится при Ctrl+C или docker stop
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// 1. Инициализация ресурсов
+	// 1. Инициализация ресурсов (БД и Redis)
 	db, err := repository.NewPostgresDB(repository.PostgresConfig{
 		Host:     cfg.DBHost,
 		Port:     cfg.DBPort,
@@ -51,48 +52,39 @@ func main() {
 		log.Fatalf("failed to initialize redis: %s", err.Error())
 	}
 
-	// 2.
+	// 2. Инициализация Воркера
+	// Мы передаем управление WaitGroup внутрь структуры WebhookWorker
+	webhookWorker := worker.NewWebhookWorker(redisClient, cfg.WebhookURL)
+
+	// Запускаем фоновые процессы воркера
+	go webhookWorker.RunScheduler(ctx)
+	go webhookWorker.StartAutoscaler(ctx, 2, 100)
+
+	// 3. Инициализация слоев (Repository -> Service -> Handler)
 	repos := repository.NewRepository(db, redisClient)
 	incCfg := service.IncidentConfig{
 		StatsWindow:     cfg.StatsWindow,
 		DetectionRadius: cfg.DetectionRadius,
 	}
 	services := service.NewService(repos, incCfg)
-	handlers := handler.NewHandler(services)
 
-	// 3. Инициализация Воркеров и WaitGroup
-	var wg sync.WaitGroup // Счетчик для ожидания горутин
-	w := worker.NewWebhookWorker(redisClient, cfg.WebhookURL)
+	handlers := handler.NewHandler(services, webhookWorker)
 
-	// Запускаем планировщик
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		w.RunScheduler(ctx)
-	}()
-
-	// Запускаем автоскейлер
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		w.StartAutoscaler(ctx, 2, 20)
-	}()
-
-	// 4. Запуск HTTP сервера
+	// 4. Запуск HTTP сервера в отдельной горутине
 	srv := new(domain.Server)
 	go func() {
-		if err := srv.Run(cfg.Port, handlers.Routes(cfg.ApiKey)); err != nil && err != http.ErrServerClosed {
-			log.Printf("HTTP server error: %s", err.Error())
+		if err := srv.Run(cfg.Port, handlers.Routes(cfg.ApiKey)); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("HTTP server error: %v", err)
 		}
 	}()
 
 	log.Printf("Server started on port %s", cfg.Port)
 
 	// --- ОЖИДАНИЕ ЗАВЕРШЕНИЯ ---
-	<-ctx.Done()
+	<-ctx.Done() // Блокируемся здесь, пока не придет сигнал (SIGINT/SIGTERM)
 	log.Println("Shutting down gracefully...")
 
-	// 1. Сначала закрываем HTTP-сервер (чтобы не принимал новые запросы)
+	// 1. Останавливаем HTTP-сервер (перестаем принимать новые входящие инциденты)
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -100,27 +92,29 @@ func main() {
 		log.Printf("Server Shutdown Failed: %+v", err)
 	}
 
-	// 2. Ждем, пока воркеры доделают свои задачи и выйдут из циклов
+	// 2. Ждем, пока воркеры доделают задачи, отправят ретраи в Redis и выйдут
+	log.Println("Waiting for workers to finish current tasks...")
+
+	// Используем канал для таймаута ожидания воркеров
 	waitCh := make(chan struct{})
 	go func() {
-		wg.Wait()
+		webhookWorker.Wait() // Этот метод внутри вызывает wg.Wait()
 		close(waitCh)
 	}()
 
-	// Либо ждем воркеров, либо убиваем по таймауту
 	select {
 	case <-waitCh:
-		log.Println("Workers finished successfully")
-	case <-time.After(10 * time.Second):
-		log.Println("Workers shutdown timed out, force closing...")
+		log.Println("All workers exited cleanly")
+	case <-time.After(15 * time.Second): // Даем воркерам чуть больше времени, чем серверу
+		log.Println("Workers shutdown timed out, force closing resources...")
 	}
 
-	// 3. И только в самом конце закрываем БД и Redis
-	if err := db.Close(); err != nil {
-		log.Printf("Failed to close DB: %v", err)
-	}
+	// 3. Только когда воркеры закончили работу с БД/Redis, закрываем соединения
 	if err := redisClient.Close(); err != nil {
 		log.Printf("Failed to close Redis: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		log.Printf("Failed to close DB: %v", err)
 	}
 
 	fmt.Println("Server exited properly")

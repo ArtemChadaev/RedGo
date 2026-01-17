@@ -17,6 +17,7 @@ func NewRedisClient(cfg RedisConfig) (*redis.Client, error) {
 		Addr:     cfg.Addr,
 		Password: cfg.Password,
 		DB:       cfg.DB,
+		PoolSize: 250,
 	})
 
 	if err := rdb.Ping(context.Background()).Err(); err != nil {

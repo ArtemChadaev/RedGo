@@ -1,6 +1,8 @@
 package config
 
 import (
+	"log"
+
 	"github.com/spf13/viper"
 )
 
@@ -26,15 +28,37 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
-	viper.SetConfigFile(".env")
-	viper.AutomaticEnv()
+	v := viper.New()
+	log.Println("Loading config...")
 
-	if err := viper.ReadInConfig(); err != nil {
-		return nil, err
+	v.SetConfigName(".env")
+	v.SetConfigType("env")
+	v.AddConfigPath(".")
+	v.AutomaticEnv()
+
+	// Пытаемся прочитать файл
+	if err := v.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			log.Println("Note: .env file not found, using system environment variables")
+		} else {
+			return nil, err
+		}
+	}
+
+	// ВАЖНО: Явно привязываем каждый ключ, чтобы Unmarshal сработал без файла
+	keys := []string{
+		"PORT", "API_KEY", "STATS_TIME_WINDOW_MINUTES", "DETECTION_RADIUS",
+		"WEBHOOK_URL", "DB_HOST", "DB_PORT", "DB_USER", "DB_NAME",
+		"DB_PASSWORD", "REDIS_HOST", "REDIS_PORT", "REDIS_PASSWORD",
+	}
+	for _, key := range keys {
+		if err := v.BindEnv(key); err != nil {
+			return nil, err
+		}
 	}
 
 	var cfg Config
-	if err := viper.Unmarshal(&cfg); err != nil {
+	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, err
 	}
 

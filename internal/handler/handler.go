@@ -2,17 +2,20 @@ package handler
 
 import (
 	"github.com/ArtemChadaev/RedGo/internal/service"
+	"github.com/ArtemChadaev/RedGo/internal/worker"
 
 	"github.com/gin-gonic/gin"
 )
 
 type Handler struct {
 	services *service.Service
+	worker   *worker.WebhookWorker
 }
 
-func NewHandler(services *service.Service) *Handler {
+func NewHandler(services *service.Service, worker *worker.WebhookWorker) *Handler {
 	return &Handler{
 		services: services,
+		worker:   worker,
 	}
 }
 
