@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"math/rand"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -128,14 +129,14 @@ func (w *WebhookWorker) addWorker(ctx context.Context) {
 	workerCtx, cancel := context.WithCancel(ctx)
 	w.workerCancel = append(w.workerCancel, cancel)
 
-	atomic.AddInt32(&w.activeWorkers, 1)
+	// Получаем текущий номер ПЕРЕД запуском горутины
+	newID := atomic.AddInt32(&w.activeWorkers, 1)
 
-	// Регистрируем новый воркер
 	w.wg.Add(1)
-	go func() {
+	go func(id int32) { // Передаем ID как аргумент
 		defer w.wg.Done()
-		w.runWorkerLoop(workerCtx)
-	}()
+		w.runWorkerLoop(workerCtx, id) // Передаем ID внутрь
+	}(newID)
 }
 
 func (w *WebhookWorker) removeWorker() {
@@ -151,8 +152,7 @@ func (w *WebhookWorker) removeWorker() {
 	}
 }
 
-func (w *WebhookWorker) runWorkerLoop(ctx context.Context) {
-	id := atomic.LoadInt32(&w.activeWorkers)
+func (w *WebhookWorker) runWorkerLoop(ctx context.Context, id int32) {
 	log.Printf("Worker #%d started", id)
 
 	for {
@@ -222,11 +222,22 @@ func (w *WebhookWorker) handleFailure(task domain.WebhookTask) {
 		return
 	}
 
-	delay := time.Duration(math.Pow(2, float64(task.Retries))) * time.Second
+	// 1. Базовая задержка: 2, 4, 8, 16... секунд
+	baseDelay := math.Pow(2, float64(task.Retries))
+
+	// 2. Добавляем Jitter (дрожание)
+	// Генерируем случайное число от 0.0 до 1.0
+	// Это размоет время возврата задач в очередь
+	jitter := rand.Float64()
+
+	// Итоговая задержка в секундах
+	delay := time.Duration(baseDelay+jitter) * time.Second
+
+	// Время, когда задача должна "проснуться" (Unix timestamp)
 	executeAt := time.Now().Add(delay).Unix()
+
 	data, _ := json.Marshal(task)
 
-	// Используем cleanupCtx вместо ctx
 	err := w.redis.ZAdd(cleanupCtx, "webhooks:delayed", redis.Z{
 		Score:  float64(executeAt),
 		Member: data,

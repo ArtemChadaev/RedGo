@@ -24,12 +24,12 @@ func main() {
 		chance := rand.Intn(100)
 
 		switch {
-		case chance < 20: // 20% шанс на долгий ответ
+		case chance < 10: // 10% шанс на долгий ответ
 			fmt.Println("Timeout")
 			time.Sleep(15 * time.Second)
 			w.WriteHeader(http.StatusOK)
 
-		case chance < 40: // 20% шанс на внутреннюю ошибку сервера
+		case chance < 20: // 10% шанс на внутреннюю ошибку сервера
 			fmt.Println("500 Internal Server Error")
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(`{"error": "portal_crashed"}`))
