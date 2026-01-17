@@ -9,7 +9,7 @@ type Incident struct {
 	Description string  `json:"description" db:"description"`
 	X           float64 `json:"x" db:"x"`
 	Y           float64 `json:"y" db:"y"`
-	Status      string  `json:"status" db:"status"`
+	Status      string  `json:"status" db:"status"` // active or inactive
 }
 
 type IncidentRepository interface {
@@ -22,11 +22,11 @@ type IncidentRepository interface {
 	// GetStats Метод для получения количества уникальных пользователей из истории проверок
 	GetStats(ctx context.Context, windowMinutes int) (int, error) // Для GET /stats
 
-	// GetCircle Получение инцидентов в круге
-	GetCircle(ctx context.Context, x, y, radius float64) ([]Incident, error)
-
 	// SaveCheck Сохранение проверок
 	SaveCheck(ctx context.Context, userID int, x, y float64) error
+
+	// GetAllActive Нужен для получения всех активных записей для кэша
+	GetAllActive(ctx context.Context) ([]Incident, error)
 }
 
 type IncidentCacheRepository interface {

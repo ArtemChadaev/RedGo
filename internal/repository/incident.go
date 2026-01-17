@@ -84,24 +84,6 @@ func (r *incidentRepository) Delete(ctx context.Context, id int) error {
 	return err
 }
 
-func (r *incidentRepository) GetCircle(ctx context.Context, x, y, radius float64) ([]domain.Incident, error) {
-	incidents := []domain.Incident{}
-
-	query := `
-		SELECT id, description, x, y, status 
-		FROM incidents 
-		WHERE status = 'active' 
-		  AND ( (x - $1)^2 + (y - $2)^2 <= $3 )
-	`
-
-	err := r.db.SelectContext(ctx, &incidents, query, x, y, radius*radius)
-	if err != nil {
-		return nil, err
-	}
-
-	return incidents, nil
-}
-
 func (r *incidentRepository) GetStats(ctx context.Context, windowMinutes int) (int, error) {
 	var count int
 	query := `
@@ -118,4 +100,34 @@ func (r *incidentRepository) SaveCheck(ctx context.Context, userID int, x, y flo
 	query := `INSERT INTO location_checks (user_id, x, y) VALUES ($1, $2, $3)`
 	_, err := r.db.ExecContext(ctx, query, userID, x, y)
 	return err
+}
+
+func (r *incidentRepository) GetAllActive(ctx context.Context) ([]domain.Incident, error) {
+	// Пишем запрос, который выбирает только активные записи
+	query := `
+        SELECT id, x, y, status 
+        FROM incidents 
+        WHERE status = 'active'
+        `
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var incidents []domain.Incident
+	for rows.Next() {
+		var inc domain.Incident
+		if err := rows.Scan(&inc.ID, &inc.X, &inc.Y, &inc.Status); err != nil {
+			return nil, err
+		}
+		incidents = append(incidents, inc)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return incidents, nil
 }

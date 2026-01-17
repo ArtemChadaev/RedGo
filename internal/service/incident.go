@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"log"
 
 	"github.com/ArtemChadaev/RedGo/internal/domain"
 )
@@ -27,7 +28,13 @@ func NewIncidentService(repo domain.IncidentRepository, cash domain.IncidentCach
 }
 
 func (s *incidentService) CreateIncident(ctx context.Context, inc *domain.Incident) error {
-	return s.repo.Create(ctx, inc)
+	if err := s.repo.Create(ctx, inc); err != nil {
+		return err
+	}
+	if err := s.cash.DeleteActive(ctx); err != nil {
+		log.Printf("failed to delete active cache: %v", err)
+	}
+	return nil
 }
 
 func (s *incidentService) GetIncidents(ctx context.Context, page, pageSize int) ([]domain.Incident, error) {
@@ -49,11 +56,24 @@ func (s *incidentService) GetIncidentByID(ctx context.Context, id int) (*domain.
 
 func (s *incidentService) UpdateIncident(ctx context.Context, id int, inc *domain.Incident) error {
 	inc.ID = id
-	return s.repo.Update(ctx, inc)
+	if err := s.repo.Update(ctx, inc); err != nil {
+		return err
+	}
+	if err := s.cash.DeleteActive(ctx); err != nil {
+		log.Printf("failed to delete active cache: %v", err)
+	}
+	return nil
 }
 
 func (s *incidentService) DeleteIncident(ctx context.Context, id int) error {
-	return s.repo.Delete(ctx, id)
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return err
+	}
+
+	if err := s.cash.DeleteActive(ctx); err != nil {
+		log.Printf("failed to delete active cache: %v", err)
+	}
+	return nil
 }
 
 func (s *incidentService) CheckLocation(ctx context.Context, userID int, x, y float64) ([]domain.Incident, error) {
@@ -61,7 +81,34 @@ func (s *incidentService) CheckLocation(ctx context.Context, userID int, x, y fl
 		return nil, err
 	}
 
-	return s.repo.GetCircle(ctx, x, y, s.cfg.DetectionRadius)
+	// Здесь кэш важен, так как запросов много
+	incidents, err := s.cash.GetActive(ctx)
+	if err != nil || incidents == nil {
+		incidents, err = s.repo.GetAllActive(ctx)
+		if err == nil {
+			_ = s.cash.SetActive(ctx, incidents)
+		}
+	}
+
+	var nearby []domain.Incident
+	radiusSq := s.cfg.DetectionRadius * s.cfg.DetectionRadius
+
+	for _, inc := range incidents {
+		if (x-inc.X)*(x-inc.X)+(y-inc.Y)*(y-inc.Y) <= radiusSq {
+			nearby = append(nearby, inc)
+
+			if err := s.queue.PushWebhookTask(ctx, domain.WebhookTask{
+				IncidentID: inc.ID,
+				UserID:     userID,
+				X:          x,
+				Y:          y,
+			}); err != nil {
+				log.Printf("WARNING: failed to push webhook task for incident %d: %v", inc.ID, err)
+			}
+		}
+	}
+
+	return nearby, nil
 }
 
 func (s *incidentService) GetStats(ctx context.Context) (int, error) {
