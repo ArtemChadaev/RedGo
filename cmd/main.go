@@ -47,7 +47,7 @@ func main() {
 	}
 
 	// 3. Инициализация слоев (Dependency Injection)
-	repos := repository.NewRepository(db)
+	repos := repository.NewRepository(db, redisClient)
 
 	// Настройки для бизнес-логики сервиса инцидентов
 	incCfg := service.IncidentConfig{
@@ -55,10 +55,10 @@ func main() {
 		DetectionRadius: cfg.DetectionRadius,
 	}
 
-	services := service.NewService(repos, redisClient, incCfg)
+	services := service.NewService(repos, incCfg)
 
 	// Инициализируем роуты, передавая API-ключ для Middleware
-	handlers := handler.NewHandler(services, redisClient)
+	handlers := handler.NewHandler(services)
 
 	srv := new(domain.Server)
 

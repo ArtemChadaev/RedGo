@@ -3,15 +3,14 @@ package service
 import (
 	"github.com/ArtemChadaev/RedGo/internal/domain"
 	"github.com/ArtemChadaev/RedGo/internal/repository"
-	"github.com/redis/go-redis/v9"
 )
 
 type Service struct {
 	domain.IncidentService
 }
 
-func NewService(repos *repository.Repository, redis *redis.Client, cfg IncidentConfig) *Service {
-	incidentService := NewIncidentService(repos.Incidents)
+func NewService(repos *repository.Repository, cfg IncidentConfig) *Service {
+	incidentService := NewIncidentService(repos.Incidents, repos.IncidentCashe, repos.Queues, cfg)
 	return &Service{
 		IncidentService: incidentService,
 	}

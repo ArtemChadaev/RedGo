@@ -4,18 +4,15 @@ import (
 	"github.com/ArtemChadaev/RedGo/internal/service"
 
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 )
 
 type Handler struct {
 	services *service.Service
-	redis    *redis.Client
 }
 
-func NewHandler(services *service.Service, redis *redis.Client) *Handler {
+func NewHandler(services *service.Service) *Handler {
 	return &Handler{
 		services: services,
-		redis:    redis,
 	}
 }
 

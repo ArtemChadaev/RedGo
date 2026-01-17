@@ -19,14 +19,20 @@ type IncidentRepository interface {
 	Update(ctx context.Context, inc *Incident) error                   // Для PUT /:id
 	Delete(ctx context.Context, id int) error                          // Для DELETE /:id (смена статуса)
 
-	// Метод для получения количества уникальных пользователей из истории проверок
+	// GetStats Метод для получения количества уникальных пользователей из истории проверок
 	GetStats(ctx context.Context, windowMinutes int) (int, error) // Для GET /stats
 
-	// Получение инцидентов в круге
+	// GetCircle Получение инцидентов в круге
 	GetCircle(ctx context.Context, x, y, radius float64) ([]Incident, error)
 
-	//Сохранение проверок
+	// SaveCheck Сохранение проверок
 	SaveCheck(ctx context.Context, userID int, x, y float64) error
+}
+
+type IncidentCacheRepository interface {
+	GetActive(ctx context.Context) ([]Incident, error)
+	SetActive(ctx context.Context, incidents []Incident) error
+	DeleteActive(ctx context.Context) error
 }
 
 type IncidentService interface {
@@ -36,9 +42,9 @@ type IncidentService interface {
 	UpdateIncident(ctx context.Context, id int, inc *Incident) error
 	DeleteIncident(ctx context.Context, id int) error
 
-	// Логика проверки координат игрока: попал ли он в радиус опасности
+	// CheckLocation Логика проверки координат игрока: попал ли он в радиус опасности
 	CheckLocation(ctx context.Context, userID int, x, y float64) ([]Incident, error)
 
-	// Получение статистики (уникальные пользователи)
+	// GetStats Получение статистики (уникальные пользователи)
 	GetStats(ctx context.Context) (int, error)
 }
