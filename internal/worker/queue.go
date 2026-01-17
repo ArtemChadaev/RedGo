@@ -59,7 +59,7 @@ func NewWebhookWorker(redis *redis.Client, url string) *WebhookWorker {
 // StartAutoscaler — ЕДИНСТВЕННАЯ точка входа. Сама управляет мощностью.
 func (w *WebhookWorker) StartAutoscaler(ctx context.Context, min, max int) {
 	w.wg.Add(1)
-	defer w.wg.Done() // Уменьшаем счетчик только при полном выходе из менеджера
+	defer w.wg.Done()
 
 	log.Printf("Autoscaler started. Min: %d, Max: %d", min, max)
 
@@ -68,7 +68,7 @@ func (w *WebhookWorker) StartAutoscaler(ctx context.Context, min, max int) {
 		w.addWorker(ctx)
 	}
 
-	ticker := time.NewTicker(5 * time.Second) // Проверяем очередь каждые 5 сек
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -76,7 +76,6 @@ func (w *WebhookWorker) StartAutoscaler(ctx context.Context, min, max int) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// 1. Узнаем длину очереди
 			qLen, err := w.redis.LLen(ctx, domain.WebhookQueueKey).Result()
 			if err != nil {
 				continue
@@ -84,17 +83,39 @@ func (w *WebhookWorker) StartAutoscaler(ctx context.Context, min, max int) {
 
 			current := atomic.LoadInt32(&w.activeWorkers)
 
-			// 2. Логика масштабирования
-			// Если задач много (> 50 на каждый воркер) — добавляем
-			if qLen > int64(current*50) && current < int32(max) {
-				log.Printf("Queue is heavy (%d tasks). Scaling UP...", qLen)
-				w.addWorker(ctx)
+			// 2. РАССЧИТЫВАЕМ ЦЕЛЕВОЕ КОЛИЧЕСТВО (target)
+			target := int32(qLen / 30)
+
+			// Ограничиваем target рамками min/max
+			if target < int32(min) {
+				target = int32(min)
+			}
+			if target > int32(max) {
+				target = int32(max)
 			}
 
-			// Если очередь пуста и воркеров больше минимума — убираем один
-			if qLen == 0 && current > int32(min) {
-				log.Printf("Queue is empty. Scaling DOWN...")
-				w.removeWorker()
+			// Если очередь пуста, сбрасываем до минимума
+			if qLen == 0 {
+				target = int32(min)
+			}
+
+			// 3. МАСШТАБИРУЕМ ПАЧКОЙ (БОЛЬШЕ ЗА РАЗ)
+			if target > current {
+				diff := target - current
+				log.Printf("Scaling UP: +%d workers (Queue: %d, Total: %d)", diff, qLen, target)
+				for i := 0; i < int(diff); i++ {
+					w.addWorker(ctx)
+				}
+			} else if target < current {
+				diff := current - target
+				// Плавное снижение: убираем не более 5 за раз, чтобы не дергать систему
+				if diff > 5 {
+					diff = 5
+				}
+				log.Printf("Scaling DOWN: -%d workers (Target: %d)", diff, target)
+				for i := 0; i < int(diff); i++ {
+					w.removeWorker()
+				}
 			}
 		}
 	}
